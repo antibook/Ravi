@@ -1,0 +1,6 @@
+{
+  "name": "TravelGuide+",
+  "description": "Complete travel companion app for exploring destinations, planning AI-powered day-wise itineraries, booking taxis, browsing verified hotels and restaurants, and purchasing digital travel guides.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
