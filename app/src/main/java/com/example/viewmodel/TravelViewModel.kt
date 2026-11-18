@@ -39,8 +39,19 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
     private val prefs = PreferencesStore(application)
     private val db = TravelGuideDatabase.getInstance(application)
     private val dao = db.dao()
+    private val cacheRepository = OfflineTravelCacheRepository(dao)
+    private val networkMonitor = NetworkStatusMonitor(application)
     private val aiRepository: TripAiRepository = PlaceholderTripAiRepository()
     private val chatRepository: TravelChatAiRepository = PlaceholderTravelChatAiRepository()
+
+    val isOnline: StateFlow<Boolean> = networkMonitor.observeIsOnline()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), networkMonitor.currentIsOnline())
+
+    val cachedItineraries: StateFlow<List<CachedItineraryEntity>> = cacheRepository.cachedItineraries
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cachedDestinations: StateFlow<List<CachedDestinationEntity>> = cacheRepository.cachedDestinations
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val userSession: StateFlow<UserSession> = prefs.userSession
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UserSession())
@@ -240,6 +251,11 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
                 dao.insertNotification(
                     NotificationEntity("n4", "20% off Goa guides", "Offer ends Sunday", "Offers", "travel_store")
                 )
+                cacheRepository.cacheItinerary(_activeTrip.value, pinOffline = true)
+                CatalogData.cities.take(2).forEach { city ->
+                    val places = CatalogData.touristPlaces.filter { it.cityId == city.id }
+                    cacheRepository.cacheDestination(city, places, pinOffline = true)
+                }
                 prefs.markDefaultsSeeded()
             }
         }
@@ -315,6 +331,7 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
             dao.clearBookings()
             dao.clearManagerBookings()
             dao.clearReviews()
+            cacheRepository.clearAllCache()
             prefs.resetAllAccountData()
             onComplete()
         }
@@ -393,66 +410,125 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
                 preferences = d.preferences
             )
             _activeTrip.value = plan
+            cacheRepository.cacheItinerary(plan, pinOffline = true)
             _isGeneratingPlan.value = false
             onReady()
         }
     }
 
     fun openTrip(entity: SavedTripEntity) {
-        val cities = entity.citiesCsv.split(",").filter { it.isNotBlank() }
-        _activeTrip.value = PlannedTrip(
-            id = entity.id,
-            title = entity.title,
-            destinationState = entity.destinationState,
-            destinationCities = cities,
-            dateRange = entity.dateRange,
-            days = entity.days,
-            adults = entity.adults,
-            children = entity.children,
-            travelType = entity.travelType,
-            budgetRange = entity.budgetRange,
-            preferences = listOf("Heritage", "Food"),
-            status = entity.status,
-            isDraft = entity.isDraft,
-            isPlaceholderAi = true,
-            budget = BudgetBreakdown(
-                entity.hotelsBudget, entity.transportBudget, entity.foodBudget, entity.ticketsBudget, entity.miscBudget
-            ),
-            itineraryDays = PlaceholderTripAiRepository.buildSampleDays(entity.destinationState, cities, entity.days),
-            colorKey = entity.colorKey
-        )
+        viewModelScope.launch {
+            val cached = cacheRepository.loadCachedItinerary(entity.id)
+            if (cached != null) {
+                _activeTrip.value = cached
+            } else {
+                val cities = entity.citiesCsv.split(",").filter { it.isNotBlank() }
+                val fallbackPlan = PlannedTrip(
+                    id = entity.id,
+                    title = entity.title,
+                    destinationState = entity.destinationState,
+                    destinationCities = cities,
+                    dateRange = entity.dateRange,
+                    days = entity.days,
+                    adults = entity.adults,
+                    children = entity.children,
+                    travelType = entity.travelType,
+                    budgetRange = entity.budgetRange,
+                    preferences = listOf("Heritage", "Food"),
+                    status = entity.status,
+                    isDraft = entity.isDraft,
+                    isPlaceholderAi = true,
+                    budget = BudgetBreakdown(
+                        entity.hotelsBudget, entity.transportBudget, entity.foodBudget, entity.ticketsBudget, entity.miscBudget
+                    ),
+                    itineraryDays = PlaceholderTripAiRepository.buildSampleDays(entity.destinationState, cities, entity.days),
+                    colorKey = entity.colorKey
+                )
+                _activeTrip.value = fallbackPlan
+                cacheRepository.cacheItinerary(fallbackPlan, pinOffline = false)
+            }
+        }
+    }
+
+    fun openCachedItinerary(entity: CachedItineraryEntity) {
+        _activeTrip.value = cacheRepository.entityToPlannedTrip(entity)
     }
 
     fun openQuickDestinationItinerary(city: CityItem) {
-        _activeTrip.value = PlannedTrip(
-            id = "quick_${city.id}",
-            title = "${city.name} · 3 Days",
-            destinationState = city.stateName,
-            destinationCities = listOf(city.name),
-            dateRange = "12–15 Dec",
-            days = 3,
-            adults = 2,
-            children = 0,
-            travelType = "Couple",
-            budgetRange = "Standard",
-            preferences = listOf("Heritage", "Food"),
-            status = "Saved",
-            isDraft = false,
-            isPlaceholderAi = true,
-            budget = BudgetBreakdown(9000, 4500, 3500, 2000, 1000),
-            itineraryDays = PlaceholderTripAiRepository.buildSampleDays(city.name, listOf(city.name), 3),
-            colorKey = city.colorKey
-        )
+        viewModelScope.launch {
+            val quickId = "quick_${city.id}"
+            val cached = cacheRepository.loadCachedItinerary(quickId)
+            if (cached != null) {
+                _activeTrip.value = cached
+            } else {
+                val quickPlan = PlannedTrip(
+                    id = quickId,
+                    title = "${city.name} · 3 Days",
+                    destinationState = city.stateName,
+                    destinationCities = listOf(city.name),
+                    dateRange = "12–15 Dec",
+                    days = 3,
+                    adults = 2,
+                    children = 0,
+                    travelType = "Couple",
+                    budgetRange = "Standard",
+                    preferences = listOf("Heritage", "Food"),
+                    status = "Saved",
+                    isDraft = false,
+                    isPlaceholderAi = true,
+                    budget = BudgetBreakdown(9000, 4500, 3500, 2000, 1000),
+                    itineraryDays = PlaceholderTripAiRepository.buildSampleDays(city.name, listOf(city.name), 3),
+                    colorKey = city.colorKey
+                )
+                _activeTrip.value = quickPlan
+                cacheRepository.cacheItinerary(quickPlan, pinOffline = false)
+            }
+        }
     }
 
     fun updateActiveBudget(newBudget: BudgetBreakdown) {
         _activeTrip.update { it.copy(budget = newBudget) }
+        viewModelScope.launch {
+            cacheRepository.cacheItinerary(_activeTrip.value, pinOffline = true)
+        }
+    }
+
+    fun downloadActiveTripOffline() {
+        viewModelScope.launch {
+            val t = _activeTrip.value
+            cacheRepository.cacheItinerary(t, pinOffline = true)
+            dao.upsertTrip(
+                SavedTripEntity(
+                    id = t.id,
+                    title = t.title.removeSuffix(" · draft"),
+                    destinationState = t.destinationState,
+                    citiesCsv = t.destinationCities.joinToString(","),
+                    dateRange = t.dateRange,
+                    days = t.days,
+                    adults = t.adults,
+                    children = t.children,
+                    travelType = t.travelType,
+                    budgetRange = t.budgetRange,
+                    totalBudget = t.budget.total,
+                    hotelsBudget = t.budget.hotels,
+                    transportBudget = t.budget.transport,
+                    foodBudget = t.budget.food,
+                    ticketsBudget = t.budget.tickets,
+                    miscBudget = t.budget.miscellaneous,
+                    status = "Saved",
+                    isDraft = false,
+                    colorKey = t.colorKey
+                )
+            )
+            showMessage("Itinerary cached in Room for offline access!")
+        }
     }
 
     fun saveActiveTripToDatabase() {
         requireAuthenticatedAction {
             viewModelScope.launch {
                 val t = _activeTrip.value
+                cacheRepository.cacheItinerary(t, pinOffline = true)
                 dao.upsertTrip(
                     SavedTripEntity(
                         id = t.id,
@@ -479,7 +555,7 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
                 dao.insertSavedItem(
                     SavedItemEntity(t.id, t.title, "${t.days} Days · ₹${t.budget.total}", "Itineraries", t.colorKey)
                 )
-                showMessage("Trip saved to My Trips!")
+                showMessage("Trip saved & cached for offline access!")
             }
         }
     }
@@ -492,15 +568,67 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun openSavedItinerary(itemId: String) {
-        val tripEntity = savedTrips.value.firstOrNull { it.id == itemId }
-        if (tripEntity != null) {
-            openTrip(tripEntity)
-            return
+        viewModelScope.launch {
+            val cached = cacheRepository.loadCachedItinerary(itemId)
+            if (cached != null) {
+                _activeTrip.value = cached
+                return@launch
+            }
+            val tripEntity = savedTrips.value.firstOrNull { it.id == itemId }
+            if (tripEntity != null) {
+                openTrip(tripEntity)
+                return@launch
+            }
+            val cityId = itemId.removePrefix("quick_")
+            val city = CatalogData.cities.firstOrNull { it.id == cityId }
+            if (city != null) {
+                openQuickDestinationItinerary(city)
+            }
         }
-        val cityId = itemId.removePrefix("quick_")
-        val city = CatalogData.cities.firstOrNull { it.id == cityId }
-        if (city != null) {
-            openQuickDestinationItinerary(city)
+    }
+
+    fun ensureDestinationCached(cityId: String) {
+        viewModelScope.launch {
+            val existing = cacheRepository.getCachedDestination(cityId)
+            if (existing == null) {
+                val city = CatalogData.cities.firstOrNull { it.id == cityId } ?: return@launch
+                val places = CatalogData.touristPlaces.filter { it.cityId == city.id }
+                    .ifEmpty { CatalogData.touristPlaces.filter { it.cityId == "jaipur" } }
+                cacheRepository.cacheDestination(city, places, pinOffline = false)
+            }
+        }
+    }
+
+    fun toggleDestinationOfflinePin(city: CityItem) {
+        viewModelScope.launch {
+            val places = CatalogData.touristPlaces.filter { it.cityId == city.id }
+                .ifEmpty { CatalogData.touristPlaces.filter { it.cityId == "jaipur" } }
+            val pinned = cacheRepository.toggleDestinationPinned(city, places)
+            showMessage(
+                if (pinned) "${city.name} saved in Room for offline access!"
+                else "${city.name} unpinned from offline storage"
+            )
+        }
+    }
+
+    fun removeCachedItinerary(id: String) {
+        viewModelScope.launch {
+            cacheRepository.removeCachedItinerary(id)
+            showMessage("Removed itinerary from offline cache")
+        }
+    }
+
+    fun removeCachedDestination(cityId: String) {
+        viewModelScope.launch {
+            cacheRepository.removeCachedDestination(cityId)
+            showMessage("Removed destination from offline cache")
+        }
+    }
+
+    fun clearOfflineCache() {
+        viewModelScope.launch {
+            cacheRepository.clearAllCache()
+            showMessage("Offline cache cleared")
         }
     }
 

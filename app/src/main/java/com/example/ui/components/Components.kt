@@ -1052,4 +1052,79 @@ fun WishlistHeartButton(
     }
 }
 
+@Composable
+fun OfflineCacheStatusBanner(
+    isOnline: Boolean,
+    isCached: Boolean,
+    cachedAtMillis: Long? = null,
+    actionLabel: String? = null,
+    onActionClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val bg = when {
+        !isOnline && isCached -> TileAmberBg
+        !isOnline && !isCached -> CoralSoft
+        isCached -> TileGreenBg
+        else -> IndigoSoft
+    }
+    val border = when {
+        !isOnline && isCached -> TileAmberBorder
+        !isOnline && !isCached -> TileCoralBorder
+        isCached -> TileGreenBorder
+        else -> TileIndigoBorder
+    }
+    val tint = when {
+        !isOnline && isCached -> Navy
+        !isOnline && !isCached -> Coral
+        isCached -> Green
+        else -> Indigo
+    }
+    val timeLabel = remember(cachedAtMillis) {
+        if (cachedAtMillis == null || cachedAtMillis <= 0L) ""
+        else " · " + SimpleDateFormat("dd MMM, HH:mm", Locale.ENGLISH).format(Date(cachedAtMillis))
+    }
+    val text = when {
+        !isOnline && isCached -> "Offline Mode · Loaded from Room cache$timeLabel"
+        !isOnline && !isCached -> "You are offline · Connect once to cache this page"
+        isCached -> "Cached in Room for offline access$timeLabel"
+        else -> "Online · Tap to save offline in Room"
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = bg,
+        border = BorderStroke(1.2.dp, border)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (!isOnline) Icons.Default.WifiOff else if (isCached) Icons.Default.CloudDone else Icons.Default.CloudDownload,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(17.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                color = Navy,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            if (actionLabel != null && onActionClick != null) {
+                TextButton(
+                    onClick = onActionClick,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(actionLabel, style = MaterialTheme.typography.labelMedium, color = Coral, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+
 

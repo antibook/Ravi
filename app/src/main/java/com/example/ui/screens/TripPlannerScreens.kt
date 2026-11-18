@@ -368,6 +368,9 @@ fun SuggestedItineraryScreen(
     trip: PlannedTrip,
     copy: AppStrings.LocalizedCopy,
     isFavorited: Boolean = false,
+    isOnline: Boolean = true,
+    isCachedOffline: Boolean = false,
+    cachedAtMillis: Long? = null,
     onBack: () -> Unit,
     onToggleFavorite: (() -> Unit)? = null,
     onOpenDayDetail: (Int) -> Unit,
@@ -434,6 +437,17 @@ fun SuggestedItineraryScreen(
                 }
             }
 
+            item {
+                OfflineCacheStatusBanner(
+                    isOnline = isOnline,
+                    isCached = isCachedOffline,
+                    cachedAtMillis = cachedAtMillis,
+                    actionLabel = if (isCachedOffline) "Refresh" else "Cache",
+                    onActionClick = onDownloadOffline,
+                    modifier = Modifier.testTag("itinerary_offline_banner")
+                )
+            }
+
             if (trip.isPlaceholderAi) {
                 item {
                     AiNoticeBanner(text = copy.aiNoticeText)
@@ -494,7 +508,7 @@ fun SuggestedItineraryScreen(
                         testTag = "save_trip_button"
                     )
                     NavyPrimaryButton(
-                        text = "⬇ Download",
+                        text = if (isCachedOffline) "✓ Offline Cached" else "⬇ Save Offline",
                         onClick = onDownloadOffline,
                         modifier = Modifier.weight(1f),
                         testTag = "download_trip_button"

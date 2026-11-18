@@ -109,6 +109,52 @@ data class ReviewEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "cached_itineraries")
+data class CachedItineraryEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val destinationState: String,
+    val citiesCsv: String,
+    val dateRange: String,
+    val days: Int,
+    val adults: Int,
+    val children: Int,
+    val travelType: String,
+    val budgetRange: String,
+    val preferencesCsv: String,
+    val hotelsBudget: Int,
+    val transportBudget: Int,
+    val foodBudget: Int,
+    val ticketsBudget: Int,
+    val miscBudget: Int,
+    val daysJson: String,
+    val isPlaceholderAi: Boolean,
+    val colorKey: String,
+    val isPinnedOffline: Boolean = true,
+    val cachedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "cached_destinations")
+data class CachedDestinationEntity(
+    @PrimaryKey val cityId: String,
+    val stateId: String,
+    val stateName: String,
+    val name: String,
+    val tagline: String,
+    val recommendedDays: String,
+    val bestTime: String,
+    val overview: String,
+    val foodHighlights: String,
+    val reachInfo: String,
+    val shoppingHighlights: String,
+    val guideId: String,
+    val guidePrice: Int,
+    val colorKey: String,
+    val placesJson: String,
+    val isPinnedOffline: Boolean = false,
+    val cachedAt: Long = System.currentTimeMillis()
+)
+
 @Dao
 interface TravelGuideDao {
     @Query("SELECT * FROM saved_trips ORDER BY updatedAt DESC")
@@ -165,6 +211,30 @@ interface TravelGuideDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReview(review: ReviewEntity)
 
+    @Query("SELECT * FROM cached_itineraries ORDER BY cachedAt DESC")
+    fun observeCachedItineraries(): Flow<List<CachedItineraryEntity>>
+
+    @Query("SELECT * FROM cached_itineraries WHERE id = :id LIMIT 1")
+    suspend fun getCachedItineraryById(id: String): CachedItineraryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCachedItinerary(item: CachedItineraryEntity)
+
+    @Query("DELETE FROM cached_itineraries WHERE id = :id")
+    suspend fun deleteCachedItinerary(id: String)
+
+    @Query("SELECT * FROM cached_destinations ORDER BY cachedAt DESC")
+    fun observeCachedDestinations(): Flow<List<CachedDestinationEntity>>
+
+    @Query("SELECT * FROM cached_destinations WHERE cityId = :cityId LIMIT 1")
+    suspend fun getCachedDestinationById(cityId: String): CachedDestinationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCachedDestination(item: CachedDestinationEntity)
+
+    @Query("DELETE FROM cached_destinations WHERE cityId = :cityId")
+    suspend fun deleteCachedDestination(cityId: String)
+
     @Query("DELETE FROM saved_trips")
     suspend fun clearTrips()
 
@@ -182,6 +252,12 @@ interface TravelGuideDao {
 
     @Query("DELETE FROM user_reviews")
     suspend fun clearReviews()
+
+    @Query("DELETE FROM cached_itineraries")
+    suspend fun clearCachedItineraries()
+
+    @Query("DELETE FROM cached_destinations")
+    suspend fun clearCachedDestinations()
 }
 
 @Database(
@@ -192,9 +268,11 @@ interface TravelGuideDao {
         TaxiBookingEntity::class,
         ManagerBookingEntity::class,
         NotificationEntity::class,
-        ReviewEntity::class
+        ReviewEntity::class,
+        CachedItineraryEntity::class,
+        CachedDestinationEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class TravelGuideDatabase : RoomDatabase() {

@@ -377,6 +377,10 @@ fun CitySelectionScreen(
 fun DestinationDetailScreen(
     cityId: String,
     isSaved: Boolean,
+    isOnline: Boolean = true,
+    cachedDestination: CachedDestinationEntity? = null,
+    onEnsureCached: (String) -> Unit = {},
+    onToggleOfflinePin: (CityItem) -> Unit = {},
     onBack: () -> Unit,
     onToggleSave: (CityItem) -> Unit,
     onOpenPlacesList: (String) -> Unit,
@@ -384,9 +388,20 @@ fun DestinationDetailScreen(
     onOpenItinerary: (CityItem) -> Unit,
     onBuyGuide: (String) -> Unit
 ) {
-    val city = CatalogData.cities.firstOrNull { it.id == cityId } ?: CatalogData.cities.first()
-    val places = CatalogData.touristPlaces.filter { it.cityId == city.id }
-        .ifEmpty { CatalogData.touristPlaces.filter { it.cityId == "jaipur" } }
+    LaunchedEffect(cityId) {
+        onEnsureCached(cityId)
+    }
+
+    val cachedPair = remember(cachedDestination) { cachedDestination?.toCityAndPlaces() }
+    val city = remember(cityId, cachedPair) {
+        cachedPair?.first ?: CatalogData.cities.firstOrNull { it.id == cityId } ?: CatalogData.cities.first()
+    }
+    val places = remember(city.id, cachedPair) {
+        val fromCache = cachedPair?.second.orEmpty()
+        if (fromCache.isNotEmpty()) fromCache
+        else CatalogData.touristPlaces.filter { it.cityId == city.id }
+            .ifEmpty { CatalogData.touristPlaces.filter { it.cityId == "jaipur" } }
+    }
     var activeTab by remember { mutableStateOf("Overview") }
 
     LazyColumn(
@@ -482,6 +497,16 @@ fun DestinationDetailScreen(
 
         item {
             Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
+                OfflineCacheStatusBanner(
+                    isOnline = isOnline,
+                    isCached = cachedDestination != null,
+                    cachedAtMillis = cachedDestination?.cachedAt,
+                    actionLabel = if (cachedDestination?.isPinnedOffline == true) "Pinned" else "Save Offline",
+                    onActionClick = { onToggleOfflinePin(city) },
+                    modifier = Modifier.testTag("dest_offline_banner")
+                )
+
+                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Overview", "Attractions", "Food", "Reach").forEach { tab ->
                         FilterPillChip(
@@ -536,20 +561,6 @@ fun DestinationDetailScreen(
                 }
 
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    places.take(3).forEach { place ->
-                        GradientStateCard(
-                            title = place.name,
-                            subtitle = place.duration,
-                            colorKey = place.colorKey,
-                            heightDp = 90,
-                            onClick = { onOpenPlacesList(city.id) }
-                        ).let { } // handled below with weight
-                    }
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -613,12 +624,26 @@ fun DestinationDetailScreen(
 fun TouristPlacesScreen(
     cityId: String,
     savedIds: Set<String>,
+    isOnline: Boolean = true,
+    cachedDestination: CachedDestinationEntity? = null,
+    onEnsureCached: (String) -> Unit = {},
     onBack: () -> Unit,
     onToggleSavePlace: (TouristPlace) -> Unit
 ) {
-    val cityName = CatalogData.cities.firstOrNull { it.id == cityId }?.name ?: "Jaipur"
-    val places = CatalogData.touristPlaces.filter { it.cityId == cityId }
-        .ifEmpty { CatalogData.touristPlaces.filter { it.cityId == "jaipur" } }
+    LaunchedEffect(cityId) {
+        onEnsureCached(cityId)
+    }
+
+    val cachedPair = remember(cachedDestination) { cachedDestination?.toCityAndPlaces() }
+    val cityName = cachedPair?.first?.name
+        ?: CatalogData.cities.firstOrNull { it.id == cityId }?.name
+        ?: "Jaipur"
+    val places = remember(cityId, cachedPair) {
+        val fromCache = cachedPair?.second.orEmpty()
+        if (fromCache.isNotEmpty()) fromCache
+        else CatalogData.touristPlaces.filter { it.cityId == cityId }
+            .ifEmpty { CatalogData.touristPlaces.filter { it.cityId == "jaipur" } }
+    }
     var selectedPlace by remember { mutableStateOf<TouristPlace?>(null) }
 
     Column(
@@ -631,6 +656,13 @@ fun TouristPlacesScreen(
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                OfflineCacheStatusBanner(
+                    isOnline = isOnline,
+                    isCached = cachedDestination != null,
+                    cachedAtMillis = cachedDestination?.cachedAt
+                )
+            }
             items(places) { place ->
                 val isFav = savedIds.contains(place.id)
                 DesignCard(

@@ -32,6 +32,10 @@ fun MyTripsScreen(
     trips: List<SavedTripEntity>,
     copy: AppStrings.LocalizedCopy,
     savedItemIds: Set<String> = emptySet(),
+    isOnline: Boolean = true,
+    cachedItinerariesCount: Int = 0,
+    cachedDestinationsCount: Int = 0,
+    onOpenOfflineCache: () -> Unit = {},
     onPlanNewTrip: () -> Unit,
     onOpenItinerary: (SavedTripEntity) -> Unit,
     onToggleFavoriteTrip: (SavedTripEntity) -> Unit = {},
@@ -68,7 +72,43 @@ fun MyTripsScreen(
             }
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
+        DesignCard(
+            onClick = onOpenOfflineCache,
+            containerColor = if (isOnline) TileGreenBg else TileAmberBg,
+            borderColor = if (isOnline) TileGreenBorder else TileAmberBorder,
+            contentPadding = PaddingValues(12.dp),
+            modifier = Modifier.testTag("trips_offline_cache_card")
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.WifiOff,
+                    contentDescription = "Offline Travel Cache",
+                    tint = if (isOnline) Green else Amber,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isOnline) "Offline Travel Cache" else "Offline Mode Active",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Navy,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "$cachedItinerariesCount itineraries · $cachedDestinationsCount destinations saved in Room",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+                Text("Manage →", style = MaterialTheme.typography.labelMedium, color = Coral, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
         if (filtered.isEmpty()) {
             DesignCard(contentPadding = PaddingValues(24.dp)) {
                 Column(
@@ -373,6 +413,8 @@ fun ProfileScreen(
     language: AppLanguage,
     notificationsEnabled: Boolean,
     copy: AppStrings.LocalizedCopy,
+    cachedCount: Int = 0,
+    onOpenOfflineCache: () -> Unit = {},
     onOpenPurchases: () -> Unit,
     onOpenTrips: () -> Unit,
     onOpenSaved: () -> Unit,
@@ -438,6 +480,9 @@ fun ProfileScreen(
         }
         item {
             ProfileMenuRow("♡", "Saved Items", onOpenSaved)
+        }
+        item {
+            ProfileMenuRow("📥", "Offline Travel Cache ($cachedCount)", onOpenOfflineCache)
         }
         item {
             DesignCard(
@@ -666,5 +711,226 @@ private fun ColorSwatch(label: String, color: Color, modifier: Modifier = Modifi
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+}
+
+@Composable
+fun OfflineCacheScreen(
+    isOnline: Boolean,
+    cachedItineraries: List<CachedItineraryEntity>,
+    cachedDestinations: List<CachedDestinationEntity>,
+    onBack: () -> Unit,
+    onOpenItinerary: (CachedItineraryEntity) -> Unit,
+    onOpenDestination: (CachedDestinationEntity) -> Unit,
+    onDeleteItinerary: (String) -> Unit,
+    onDeleteDestination: (String) -> Unit,
+    onClearAll: () -> Unit,
+    onExploreDestinations: () -> Unit,
+    onPlanTrip: () -> Unit
+) {
+    var selectedTab by remember { mutableStateOf("All") }
+    var showClearConfirm by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Lavender)
+    ) {
+        TravelTopBar(
+            title = "Offline Travel Cache",
+            onBack = onBack,
+            trailing = if (cachedItineraries.isNotEmpty() || cachedDestinations.isNotEmpty()) {
+                {
+                    TextButton(
+                        onClick = { showClearConfirm = true },
+                        modifier = Modifier.testTag("clear_offline_cache_btn")
+                    ) {
+                        Text("Clear", color = Coral, fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else null
+        )
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                DesignCard(
+                    containerColor = if (isOnline) TileGreenBg else TileAmberBg,
+                    borderColor = if (isOnline) TileGreenBorder else TileAmberBorder,
+                    contentPadding = PaddingValues(14.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceWhite),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.WifiOff,
+                                contentDescription = null,
+                                tint = if (isOnline) Green else Amber
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isOnline) "Online · Auto-syncing to Room" else "Offline Mode · Reading from Room",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Navy,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${cachedItineraries.size} itineraries & ${cachedDestinations.size} destinations stored locally for zero-network access.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Itineraries", "Destinations").forEach { tab ->
+                        FilterPillChip(
+                            label = tab,
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab }
+                        )
+                    }
+                }
+            }
+
+            val showItineraries = selectedTab == "All" || selectedTab == "Itineraries"
+            val showDestinations = selectedTab == "All" || selectedTab == "Destinations"
+
+            if (showItineraries && cachedItineraries.isNotEmpty()) {
+                item {
+                    Text("Cached Itineraries", style = MaterialTheme.typography.titleMedium, color = Navy, fontWeight = FontWeight.Bold)
+                }
+                items(cachedItineraries, key = { "it_${it.id}" }) { cached ->
+                    val budget = cached.hotelsBudget + cached.transportBudget + cached.foodBudget + cached.ticketsBudget + cached.miscBudget
+                    DesignCard(
+                        onClick = { onOpenItinerary(cached) },
+                        borderColor = CardBorder,
+                        contentPadding = PaddingValues(12.dp),
+                        modifier = Modifier.testTag("cached_itinerary_card_${cached.id}")
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GradientBannerThumb(colorKey = cached.colorKey, modifier = Modifier.size(52.dp), cornerRadius = 12.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(cached.title, style = MaterialTheme.typography.titleSmall, color = Navy, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "${cached.destinationState} · ${cached.dateRange} · ${formatInr(budget)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    text = "Cached offline · ${cached.days} full day plans",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Green,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            IconButton(onClick = { onDeleteItinerary(cached.id) }) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Remove cached itinerary", tint = TextMuted)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showDestinations && cachedDestinations.isNotEmpty()) {
+                item {
+                    Text("Cached Destinations", style = MaterialTheme.typography.titleMedium, color = Navy, fontWeight = FontWeight.Bold)
+                }
+                items(cachedDestinations, key = { "dest_${it.cityId}" }) { dest ->
+                    val placesCount = remember(dest.placesJson) { deserializeTouristPlacesJson(dest.placesJson).size }
+                    DesignCard(
+                        onClick = { onOpenDestination(dest) },
+                        borderColor = CardBorder,
+                        contentPadding = PaddingValues(12.dp),
+                        modifier = Modifier.testTag("cached_destination_card_${dest.cityId}")
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GradientBannerThumb(colorKey = dest.colorKey, modifier = Modifier.size(52.dp), cornerRadius = 12.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(dest.name, style = MaterialTheme.typography.titleSmall, color = Navy, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "${dest.stateName} · ${dest.recommendedDays} · $placesCount attractions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary
+                                )
+                                Text(
+                                    text = if (dest.isPinnedOffline) "Pinned for offline use" else "Auto-cached on visit",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Indigo,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            IconButton(onClick = { onDeleteDestination(dest.cityId) }) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Remove cached destination", tint = TextMuted)
+                            }
+                        }
+                    }
+                }
+            }
+
+            val nothingVisible = (!showItineraries || cachedItineraries.isEmpty()) &&
+                (!showDestinations || cachedDestinations.isEmpty())
+            if (nothingVisible) {
+                item {
+                    DesignCard(contentPadding = PaddingValues(20.dp)) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, tint = Indigo, modifier = Modifier.size(38.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("No cached travel plans yet", style = MaterialTheme.typography.titleSmall, color = Navy, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Open any destination guide or trip itinerary to cache full day-wise schedules and attractions in Room for offline access.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                            Spacer(Modifier.height(14.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                WhiteOutlinedButton(text = "Explore", onClick = onExploreDestinations, modifier = Modifier.weight(1f))
+                                CoralPrimaryButton(text = "Plan Trip", onClick = onPlanTrip, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            containerColor = SurfaceWhite,
+            title = { Text("Clear Offline Cache?", color = Navy, fontWeight = FontWeight.Bold) },
+            text = { Text("This removes all cached itineraries and destination details from Room storage.", color = TextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearConfirm = false
+                        onClearAll()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = SurfaceWhite)
+                ) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) { Text("Cancel", color = Navy) }
+            }
+        )
     }
 }

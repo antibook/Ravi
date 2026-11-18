@@ -68,6 +68,7 @@ object Routes {
     const val SAVED = "saved"
     const val NOTIFICATIONS = "notifications"
     const val PROFILE = "profile"
+    const val OFFLINE_CACHE = "offline_cache"
     const val DESIGN_SYSTEM = "design_system"
 }
 
@@ -101,6 +102,9 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
     val isChatSending by viewModel.isChatSending.collectAsStateWithLifecycle()
     val guestGateVisible by viewModel.guestGateVisible.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
+    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+    val cachedItineraries by viewModel.cachedItineraries.collectAsStateWithLifecycle()
+    val cachedDestinations by viewModel.cachedDestinations.collectAsStateWithLifecycle()
 
     val copy = remember(language) { AppStrings.get(language) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -306,9 +310,16 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                 ) { entry ->
                     val cityId = entry.arguments?.getString("cityId") ?: "jaipur"
                     val isSaved = savedItems.any { it.itemId == "city_$cityId" }
+                    val cachedDest = remember(cachedDestinations, cityId) {
+                        cachedDestinations.firstOrNull { it.cityId == cityId }
+                    }
                     DestinationDetailScreen(
                         cityId = cityId,
                         isSaved = isSaved,
+                        isOnline = isOnline,
+                        cachedDestination = cachedDest,
+                        onEnsureCached = viewModel::ensureDestinationCached,
+                        onToggleOfflinePin = viewModel::toggleDestinationOfflinePin,
                         onBack = { navController.popBackStack() },
                         onToggleSave = { city ->
                             viewModel.toggleSavedItem(
@@ -339,9 +350,15 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                 ) { entry ->
                     val cityId = entry.arguments?.getString("cityId") ?: "jaipur"
                     val savedPlaceIds = savedItems.map { it.itemId.removePrefix("place_") }.toSet()
+                    val cachedDest = remember(cachedDestinations, cityId) {
+                        cachedDestinations.firstOrNull { it.cityId == cityId }
+                    }
                     TouristPlacesScreen(
                         cityId = cityId,
                         savedIds = savedPlaceIds,
+                        isOnline = isOnline,
+                        cachedDestination = cachedDest,
+                        onEnsureCached = viewModel::ensureDestinationCached,
                         onBack = { navController.popBackStack() },
                         onToggleSavePlace = { place ->
                             viewModel.toggleSavedItem(
@@ -391,10 +408,16 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
 
                 composable(Routes.ITINERARY) {
                     val isFav = savedItemIds.contains(activeTrip.id)
+                    val cachedEntity = remember(cachedItineraries, activeTrip.id) {
+                        cachedItineraries.firstOrNull { it.id == activeTrip.id }
+                    }
                     SuggestedItineraryScreen(
                         trip = activeTrip,
                         copy = copy,
                         isFavorited = isFav,
+                        isOnline = isOnline,
+                        isCachedOffline = cachedEntity != null,
+                        cachedAtMillis = cachedEntity?.cachedAt,
                         onBack = { navController.popBackStack() },
                         onToggleFavorite = {
                             viewModel.toggleSavedItem(
@@ -409,10 +432,7 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         onOpenRouteMap = { d -> navController.navigate("route_map/$d") },
                         onOpenBudget = { navController.navigate(Routes.BUDGET) },
                         onSaveTrip = viewModel::saveActiveTripToDatabase,
-                        onDownloadOffline = {
-                            viewModel.saveActiveTripToDatabase()
-                            viewModel.showMessage("Itinerary saved for offline access!")
-                        }
+                        onDownloadOffline = viewModel::downloadActiveTripOffline
                     )
                 }
 
@@ -773,6 +793,10 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         trips = trips,
                         copy = copy,
                         savedItemIds = savedItemIds,
+                        isOnline = isOnline,
+                        cachedItinerariesCount = cachedItineraries.size,
+                        cachedDestinationsCount = cachedDestinations.size,
+                        onOpenOfflineCache = { navController.navigate(Routes.OFFLINE_CACHE) },
                         onPlanNewTrip = { navController.navigate(Routes.PLANNER_DEST) },
                         onOpenItinerary = { entity ->
                             viewModel.openTrip(entity)
@@ -848,6 +872,8 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         language = language,
                         notificationsEnabled = notificationsEnabled,
                         copy = copy,
+                        cachedCount = cachedItineraries.size + cachedDestinations.size,
+                        onOpenOfflineCache = { navController.navigate(Routes.OFFLINE_CACHE) },
                         onOpenPurchases = { navController.navigate(Routes.MY_PURCHASES) },
                         onOpenTrips = { navController.navigate(Routes.TRIPS) },
                         onOpenSaved = { navController.navigate(Routes.SAVED) },
@@ -874,6 +900,27 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                                 }
                             }
                         }
+                    )
+                }
+
+                composable(Routes.OFFLINE_CACHE) {
+                    OfflineCacheScreen(
+                        isOnline = isOnline,
+                        cachedItineraries = cachedItineraries,
+                        cachedDestinations = cachedDestinations,
+                        onBack = { navController.popBackStack() },
+                        onOpenItinerary = { cached ->
+                            viewModel.openCachedItinerary(cached)
+                            navController.navigate(Routes.ITINERARY)
+                        },
+                        onOpenDestination = { dest ->
+                            navController.navigate("dest_detail/${dest.cityId}")
+                        },
+                        onDeleteItinerary = viewModel::removeCachedItinerary,
+                        onDeleteDestination = viewModel::removeCachedDestination,
+                        onClearAll = viewModel::clearOfflineCache,
+                        onExploreDestinations = { navController.navigate(Routes.EXPLORE) },
+                        onPlanTrip = { navController.navigate(Routes.PLANNER_DEST) }
                     )
                 }
 
