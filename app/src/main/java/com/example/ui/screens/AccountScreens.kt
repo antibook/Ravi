@@ -30,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 @Composable
 fun MyTripsScreen(
     trips: List<SavedTripEntity>,
+    smartTrips: List<SmartTripPlan> = emptyList(),
     copy: AppStrings.LocalizedCopy,
     savedItemIds: Set<String> = emptySet(),
     isOnline: Boolean = true,
@@ -37,14 +38,30 @@ fun MyTripsScreen(
     cachedDestinationsCount: Int = 0,
     onOpenOfflineCache: () -> Unit = {},
     onPlanNewTrip: () -> Unit,
+    onViewSmartTrip: (String) -> Unit = {},
+    onEditSmartTrip: (String) -> Unit = {},
+    onDeleteSmartTrip: (String) -> Unit = {},
     onOpenItinerary: (SavedTripEntity) -> Unit,
     onToggleFavoriteTrip: (SavedTripEntity) -> Unit = {},
     onEditTrip: () -> Unit,
     onDeleteTrip: (String) -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf("Upcoming") }
-    val filtered = remember(trips, selectedTab) {
-        trips.filter { it.status.equals(selectedTab, ignoreCase = true) }
+    var selectedTab by remember { mutableStateOf("All") }
+    val filteredSmart = remember(smartTrips, selectedTab) {
+        when (selectedTab) {
+            "Drafts" -> smartTrips.filter { it.status.equals("Draft", ignoreCase = true) }
+            "Planned" -> smartTrips.filter { it.status.equals("Planned", ignoreCase = true) }
+            "Confirmed" -> smartTrips.filter { it.status.equals("Confirmed", ignoreCase = true) }
+            else -> smartTrips
+        }
+    }
+    val filteredLegacy = remember(trips, smartTrips, selectedTab) {
+        val smartIds = smartTrips.map { it.id }.toSet()
+        trips.filterNot { smartIds.contains(it.id) }.let { remaining ->
+            if (selectedTab == "All") remaining
+            else if (selectedTab == "Confirmed") remaining.filter { it.status.equals("Upcoming", true) || it.status.equals("Completed", true) }
+            else remaining
+        }
     }
 
     Column(
@@ -61,13 +78,27 @@ fun MyTripsScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(copy.myTripsTitle, style = MaterialTheme.typography.headlineMedium, color = Navy, fontWeight = FontWeight.Bold)
-            TextButton(onClick = onPlanNewTrip, modifier = Modifier.testTag("trips_plan_new_btn")) {
-                Text("+ Plan Trip", color = Coral, fontWeight = FontWeight.Bold)
+            Button(
+                onClick = onPlanNewTrip,
+                colors = ButtonDefaults.buttonColors(containerColor = Coral, contentColor = SurfaceWhite),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.testTag("trips_plan_new_btn")
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Create New Trip", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Upcoming", "Saved", "Completed").forEach { tab ->
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("All", "Drafts", "Planned", "Confirmed").forEach { tab ->
                 FilterPillChip(label = tab, selected = selectedTab == tab, onClick = { selectedTab = tab })
             }
         }
@@ -109,7 +140,7 @@ fun MyTripsScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        if (filtered.isEmpty()) {
+        if (filteredSmart.isEmpty() && filteredLegacy.isEmpty()) {
             DesignCard(contentPadding = PaddingValues(24.dp)) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -117,11 +148,11 @@ fun MyTripsScreen(
                 ) {
                     Icon(Icons.Default.FlightTakeoff, contentDescription = null, tint = Indigo, modifier = Modifier.size(40.dp))
                     Spacer(Modifier.height(10.dp))
-                    Text("No $selectedTab trips yet", style = MaterialTheme.typography.titleSmall, color = Navy, fontWeight = FontWeight.Bold)
+                    Text("No trips in $selectedTab yet", style = MaterialTheme.typography.titleSmall, color = Navy, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
-                    Text("Create a day-wise trip itinerary in seconds.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Text("Use the 8-Module Smart Trip Planner to organize cities, hotels, transport & route maps.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                     Spacer(Modifier.height(14.dp))
-                    CoralPrimaryButton(text = "Plan a Trip", onClick = onPlanNewTrip)
+                    CoralPrimaryButton(text = "+ Create New Trip", onClick = onPlanNewTrip)
                 }
             }
         } else {
@@ -129,7 +160,104 @@ fun MyTripsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(filtered) { trip ->
+                if (filteredSmart.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "Smart Planned Trips (${filteredSmart.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Navy,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    items(filteredSmart, key = { "smart_${it.id}" }) { plan ->
+                        val title = plan.tripName.ifBlank { "${plan.destCity} Trip" }
+                        val mainDest = plan.cityPlans.joinToString(" → ") { it.cityName }.ifBlank { plan.destCity }
+                        val statusColor = when (plan.status) {
+                            "Confirmed" -> Green
+                            "Planned" -> Indigo
+                            else -> Amber
+                        }
+                        val statusBg = when (plan.status) {
+                            "Confirmed" -> TileGreenBg
+                            "Planned" -> TileIndigoBg
+                            else -> TileAmberBg
+                        }
+                        DesignCard(
+                            containerColor = SurfaceWhite,
+                            borderColor = CardBorder,
+                            contentPadding = PaddingValues(14.dp),
+                            modifier = Modifier.testTag("smart_trip_card_${plan.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(title, style = MaterialTheme.typography.titleMedium, color = Navy, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "${plan.startCity} → $mainDest",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextSecondary
+                                    )
+                                }
+                                Surface(color = statusBg, shape = RoundedCornerShape(8.dp)) {
+                                    Text(
+                                        text = plan.status,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = statusColor,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "${plan.dateRangeText} · ${plan.cityPlans.size} Cities · ${plan.cityPlans.sumOf { it.attractions.size }} Spots",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Indigo
+                                )
+                                Text(
+                                    text = formatInr(plan.estimatedCategoryTotal),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Coral,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                WhiteOutlinedButton(
+                                    text = "View Trip",
+                                    onClick = { onViewSmartTrip(plan.id) },
+                                    modifier = Modifier.weight(1f),
+                                    testTag = "view_smart_trip_${plan.id}"
+                                )
+                                NavyPrimaryButton(
+                                    text = "Edit Trip",
+                                    onClick = { onEditSmartTrip(plan.id) },
+                                    modifier = Modifier.weight(1f),
+                                    testTag = "edit_smart_trip_${plan.id}"
+                                )
+                                IconButton(
+                                    onClick = { onDeleteSmartTrip(plan.id) },
+                                    modifier = Modifier.minimumInteractiveComponentSize()
+                                ) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete trip", tint = TextMuted)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                items(filteredLegacy, key = { "legacy_${it.id}" }) { trip ->
                     DesignCard(contentPadding = PaddingValues(12.dp)) {
                         GradientBannerThumb(
                             colorKey = trip.colorKey,

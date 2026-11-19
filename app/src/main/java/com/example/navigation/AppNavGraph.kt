@@ -19,6 +19,7 @@ import com.example.data.*
 import com.example.ui.components.GuestGateDialog
 import com.example.ui.components.TravelBottomBar
 import com.example.ui.screens.*
+import com.example.ui.screens.planner.SmartTripPlannerScreen
 import com.example.viewmodel.TravelViewModel
 
 object Routes {
@@ -35,6 +36,7 @@ object Routes {
     const val DEST_DETAIL = "dest_detail/{cityId}"
     const val PLACES_LIST = "places_list/{cityId}"
     const val PLANNER_DEST = "planner_dest"
+    const val SMART_PLANNER = "smart_planner"
     const val PLANNER_DATES = "planner_dates"
     const val PLANNER_TRAVELLERS = "planner_travellers"
     const val ITINERARY = "itinerary"
@@ -105,6 +107,9 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val cachedItineraries by viewModel.cachedItineraries.collectAsStateWithLifecycle()
     val cachedDestinations by viewModel.cachedDestinations.collectAsStateWithLifecycle()
+    val activeSmartTrip by viewModel.activeSmartTrip.collectAsStateWithLifecycle()
+    val savedSmartTrips by viewModel.savedSmartTrips.collectAsStateWithLifecycle()
+    val registeredHotels by viewModel.registeredHotels.collectAsStateWithLifecycle()
 
     val copy = remember(language) { AppStrings.get(language) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -241,10 +246,15 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         onOpenNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
                         onOpenProfile = { navController.navigate(Routes.PROFILE) },
                         onOpenChatAssistant = { navController.navigate(Routes.TRAVEL_CHAT) },
-                        onPlanMyTrip = { navController.navigate(Routes.PLANNER_DEST) },
+                        onPlanMyTrip = {
+                            viewModel.smartPlanner.goToStep(1)
+                            navController.navigate(Routes.SMART_PLANNER)
+                        },
                         onSelectCity = { cityId -> navController.navigate("dest_detail/$cityId") },
                         onOpenTravelGuides = { navController.navigate(Routes.TRAVEL_STORE) },
-                        onOpenTripPlanner = { navController.navigate(Routes.PLANNER_DEST) },
+                        onOpenTripPlanner = {
+                            navController.navigate(Routes.SMART_PLANNER)
+                        },
                         onOpenHotels = { navController.navigate(Routes.HOTELS) },
                         onOpenTaxi = { navController.navigate(Routes.BOOK_TAXI) },
                         onOpenRestaurants = { navController.navigate(Routes.RESTAURANTS) },
@@ -372,7 +382,24 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                     )
                 }
 
-                // Part 3: Trip Planner
+                // Part 3: 8-Module Smart Trip Planner + Quick Itinerary
+                composable(Routes.SMART_PLANNER) {
+                    SmartTripPlannerScreen(
+                        plan = activeSmartTrip,
+                        registeredHotels = registeredHotels,
+                        controller = viewModel.smartPlanner,
+                        onExitToHome = {
+                            navController.popBackStack(Routes.HOME, inclusive = false)
+                        },
+                        onExitToMyTrips = {
+                            navController.navigate(Routes.TRIPS) {
+                                popUpTo(Routes.HOME) { saveState = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    )
+                }
+
                 composable(Routes.PLANNER_DEST) {
                     PlannerDestinationScreen(
                         draft = plannerDraft,
@@ -791,13 +818,27 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                 composable(Routes.TRIPS) {
                     MyTripsScreen(
                         trips = trips,
+                        smartTrips = savedSmartTrips,
                         copy = copy,
                         savedItemIds = savedItemIds,
                         isOnline = isOnline,
                         cachedItinerariesCount = cachedItineraries.size,
                         cachedDestinationsCount = cachedDestinations.size,
                         onOpenOfflineCache = { navController.navigate(Routes.OFFLINE_CACHE) },
-                        onPlanNewTrip = { navController.navigate(Routes.PLANNER_DEST) },
+                        onPlanNewTrip = {
+                            viewModel.smartPlanner.startNewTrip()
+                            navController.navigate(Routes.SMART_PLANNER)
+                        },
+                        onViewSmartTrip = { id ->
+                            viewModel.smartPlanner.openTrip(id)
+                            viewModel.smartPlanner.goToStep(8)
+                            navController.navigate(Routes.SMART_PLANNER)
+                        },
+                        onEditSmartTrip = { id ->
+                            viewModel.smartPlanner.openTrip(id)
+                            navController.navigate(Routes.SMART_PLANNER)
+                        },
+                        onDeleteSmartTrip = viewModel.smartPlanner::deleteSmartTrip,
                         onOpenItinerary = { entity ->
                             viewModel.openTrip(entity)
                             navController.navigate(Routes.ITINERARY)
@@ -811,7 +852,7 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                                 colorKey = entity.colorKey
                             )
                         },
-                        onEditTrip = { navController.navigate(Routes.PLANNER_DEST) },
+                        onEditTrip = { navController.navigate(Routes.SMART_PLANNER) },
                         onDeleteTrip = viewModel::deleteTrip
                     )
                 }
@@ -845,7 +886,10 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         },
                         onExploreHotels = { navController.navigate(Routes.HOTELS) },
                         onExploreRestaurants = { navController.navigate(Routes.RESTAURANTS) },
-                        onPlanTrip = { navController.navigate(Routes.PLANNER_DEST) }
+                        onPlanTrip = {
+                            viewModel.smartPlanner.startNewTrip()
+                            navController.navigate(Routes.SMART_PLANNER)
+                        }
                     )
                 }
 
@@ -920,7 +964,10 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         onDeleteDestination = viewModel::removeCachedDestination,
                         onClearAll = viewModel::clearOfflineCache,
                         onExploreDestinations = { navController.navigate(Routes.EXPLORE) },
-                        onPlanTrip = { navController.navigate(Routes.PLANNER_DEST) }
+                        onPlanTrip = {
+                            viewModel.smartPlanner.startNewTrip()
+                            navController.navigate(Routes.SMART_PLANNER)
+                        }
                     )
                 }
 

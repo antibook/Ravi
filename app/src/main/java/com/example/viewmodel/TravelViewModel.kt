@@ -44,6 +44,16 @@ class TravelViewModel(application: Application) : AndroidViewModel(application) 
     private val aiRepository: TripAiRepository = PlaceholderTripAiRepository()
     private val chatRepository: TravelChatAiRepository = PlaceholderTravelChatAiRepository()
 
+    val smartPlanner = SmartTripController(
+        dao = dao,
+        cacheRepository = cacheRepository,
+        scope = viewModelScope,
+        onMessage = ::showMessage
+    )
+    val activeSmartTrip: StateFlow<SmartTripPlan> = smartPlanner.activeTrip
+    val savedSmartTrips: StateFlow<List<SmartTripPlan>> = smartPlanner.savedSmartTrips
+    val registeredHotels: StateFlow<List<SmartHotelItem>> = smartPlanner.registeredHotels
+
     val isOnline: StateFlow<Boolean> = networkMonitor.observeIsOnline()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), networkMonitor.currentIsOnline())
 

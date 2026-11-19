@@ -155,6 +155,40 @@ data class CachedDestinationEntity(
     val cachedAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "smart_trips")
+data class SmartTripEntity(
+    @PrimaryKey val id: String,
+    val tripName: String,
+    val mainDestination: String,
+    val dateRangeText: String,
+    val daysCount: Int,
+    val currentStep: Int,
+    val status: String,
+    val colorKey: String,
+    val payloadJson: String,
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "registered_hotels")
+data class RegisteredHotelEntity(
+    @PrimaryKey val id: String,
+    val stateName: String,
+    val cityName: String,
+    val name: String,
+    val description: String,
+    val address: String,
+    val pricePerNight: Int,
+    val starCategory: Int,
+    val isAc: Boolean,
+    val hasParking: Boolean,
+    val hasBreakfast: Boolean,
+    val familyFriendly: Boolean,
+    val friendsFriendly: Boolean,
+    val lat: Double,
+    val lng: Double,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Dao
 interface TravelGuideDao {
     @Query("SELECT * FROM saved_trips ORDER BY updatedAt DESC")
@@ -258,6 +292,24 @@ interface TravelGuideDao {
 
     @Query("DELETE FROM cached_destinations")
     suspend fun clearCachedDestinations()
+
+    @Query("SELECT * FROM smart_trips ORDER BY updatedAt DESC")
+    fun observeSmartTrips(): Flow<List<SmartTripEntity>>
+
+    @Query("SELECT * FROM smart_trips WHERE id = :id LIMIT 1")
+    suspend fun getSmartTripById(id: String): SmartTripEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSmartTrip(trip: SmartTripEntity)
+
+    @Query("DELETE FROM smart_trips WHERE id = :id")
+    suspend fun deleteSmartTrip(id: String)
+
+    @Query("SELECT * FROM registered_hotels ORDER BY createdAt DESC")
+    fun observeRegisteredHotels(): Flow<List<RegisteredHotelEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRegisteredHotel(hotel: RegisteredHotelEntity)
 }
 
 @Database(
@@ -270,9 +322,11 @@ interface TravelGuideDao {
         NotificationEntity::class,
         ReviewEntity::class,
         CachedItineraryEntity::class,
-        CachedDestinationEntity::class
+        CachedDestinationEntity::class,
+        SmartTripEntity::class,
+        RegisteredHotelEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class TravelGuideDatabase : RoomDatabase() {
