@@ -44,6 +44,7 @@ object Routes {
     const val ROUTE_MAP = "route_map/{dayNum}"
     const val BUDGET = "budget"
     const val TRAVEL_STORE = "travel_store"
+    const val EXPLORE_TRAVEL_GUIDES = "explore_travel_guides"
     const val PRODUCT_DETAIL = "product_detail"
     const val CHECKOUT_HANDOFF = "checkout_handoff"
     const val SUPERPROFILE_CHECKOUT = "superprofile_checkout"
@@ -251,7 +252,7 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                             navController.navigate(Routes.SMART_PLANNER)
                         },
                         onSelectCity = { cityId -> navController.navigate("dest_detail/$cityId") },
-                        onOpenTravelGuides = { navController.navigate(Routes.TRAVEL_STORE) },
+                        onOpenTravelGuides = { navController.navigate(Routes.EXPLORE_TRAVEL_GUIDES) },
                         onOpenTripPlanner = {
                             navController.navigate(Routes.SMART_PLANNER)
                         },
@@ -283,7 +284,7 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                         onOpenCountrySelection = { navController.navigate(Routes.COUNTRY_SELECT) },
                         onOpenStateSelection = { navController.navigate(Routes.STATE_SELECT) },
                         onSelectState = { stateId -> navController.navigate("city_select/$stateId") },
-                        onOpenTravelStore = { navController.navigate(Routes.TRAVEL_STORE) }
+                        onOpenTravelStore = { navController.navigate(Routes.EXPLORE_TRAVEL_GUIDES) }
                     )
                 }
 
@@ -505,7 +506,15 @@ fun TravelGuideApp(viewModel: TravelViewModel) {
                     )
                 }
 
-                // Part 4: Travel Store & Checkout
+                // Part 4: Travel Guide Discovery & Store
+                composable(Routes.EXPLORE_TRAVEL_GUIDES) {
+                    ExploreTravelGuidesScreen(
+                        savedItemIds = savedItemIds,
+                        onBack = { navController.popBackStack() },
+                        onOpenSavedShortlist = { navController.navigate(Routes.SAVED) }
+                    )
+                }
+
                 composable(Routes.TRAVEL_STORE) {
                     TravelStoreScreen(
                         copy = copy,

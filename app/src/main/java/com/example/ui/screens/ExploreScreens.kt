@@ -77,7 +77,7 @@ fun ExploreScreen(
             TextButton(onClick = onOpenTravelStore, modifier = Modifier.testTag("explore_store_btn")) {
                 Icon(Icons.Default.MenuBook, contentDescription = null, tint = Coral, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("PDF Store", color = Coral, fontWeight = FontWeight.SemiBold)
+                Text("Travel Guides", color = Coral, fontWeight = FontWeight.SemiBold)
             }
         }
 
